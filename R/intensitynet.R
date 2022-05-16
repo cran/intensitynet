@@ -1,14 +1,14 @@
-
-
 #' Constructor of the class intensitynet. In order to create an intensitynet object, it is needed; an adjacency matrix, the
 #' coordinates of the nodes and the coordinates of the events.
 #'
 #' @name intensitynet
 #'
 #' @param adjacency_mtx Network adjacency matrix
-#' @param node_coords Nodes latitude and longitude matrix
-#' @param event_coords Events latitude and longitude matrix
+#' @param node_coords Nodes latitude and longitude matrix (coordinates)
+#' @param event_data DataFrame with event latitude and longitude coordinates (mandatory columns) and optional attributes related to the events
 #' @param graph_type Network type: 'undirected' (default), 'directed' or 'mixed' 
+#' @param event_correction Value that determines how far can be an event to be considered part of a segment (default 5). 
+#' This value highly depends on the given coordinate system
 #'
 #' @return intensitynet class object containing: graph = <igraph>, events = <matrix>, graph_type = c('directed', 'undirected', 'mixed'), 
 #' distances = <matrix>
@@ -27,19 +27,19 @@
 #' chicago_adj_mtx <- as.matrix(igraph::as_adjacency_matrix(chicago_net))
 #' chicago_node_coords <- data.frame(xcoord = chicago[["domain"]][["vertices"]][["x"]], 
 #'                                  ycoord = chicago[["domain"]][["vertices"]][["y"]])
-#'
-#' # Create a dataframe with the coordinates of the events 'assault'
-#' chicago_assault <- chicago_df[chicago_df$marks == 'assault',]
-#' assault_coordinates <- data.frame(xcoord = chicago_assault[,1],
-#'                                   ycoord = chicago_assault[,2])
 #'                                   
 #' # Create the intensitynet object, in this case will be undirected 
 #' intnet_chicago <- intensitynet(chicago_adj_mtx, 
 #'                                node_coords = chicago_node_coords, 
-#'                                event_coords = assault_coordinates)
+#'                                event_data = chicago_df)
 #' 
 #' @export
-intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 'undirected'){
+intensitynet <- function(adjacency_mtx, node_coords, event_data, graph_type = 'undirected', event_correction = 5){
+  
+  if(event_correction < 0){
+    message("Warning: event correction value cannot be less than 0, using default.")
+    event_correction <- 5
+  }
   
   if (is.data.frame(adjacency_mtx)) {
     adjacency_mtx <- as.matrix(adjacency_mtx)
@@ -48,12 +48,13 @@ intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 
   if (is.data.frame(node_coords)) {
     node_coords <- as.matrix(node_coords)
   }
-  
-  if (is.data.frame(event_coords)) {
-    event_coords <- as.matrix(event_coords)
-  }
   colnames(node_coords) <- c("xcoord", "ycoord")
-  colnames(event_coords) <- c("xcoord", "ycoord")
+  
+  
+  if (is.matrix(event_data)) {
+    event_data <- as.data.frame(event_data)
+  }
+  names(event_data)[1:2] <- c("xcoord", "ycoord")
   
   node_coords_obj <- list(node_coords = node_coords)
   class(node_coords_obj) <- "netTools"
@@ -68,7 +69,8 @@ intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 
   class(net_setup) <- "netTools"
   g <- InitGraph(net_setup)
   
-  intnet <- list(graph = g, events = event_coords, graph_type = graph_type, distances_mtx = dist_mtx)
+  intnet <- list(graph = g, events = event_data, graph_type = graph_type, 
+                 distances_mtx = dist_mtx, event_correction = event_correction)
   attr(intnet, "class") <- "intensitynet"
   # Select the proper class
   switch(graph_type, 
@@ -82,8 +84,9 @@ intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 
 
 # -------- Network functions ----------
 
-#' Gives general node correlation of the network (choosing from normal correlation, covariance, 
-#' moran-i or geary)
+#' It allows to compute different dependence statistics on the network
+#' for the given vector and for neighborhoods of distinct order. Such statistics are; correlation,
+#' covariance, Moran’s I and Geary’s C. 
 #' 
 #' @name NodeGeneralCorrelation
 #'
@@ -91,7 +94,8 @@ intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 
 #' @param dep_type 'correlation', 'covariance', moran', 'geary'. The type of 
 #' dependence statistic to be computed.
 #' @param lag_max Maximum geodesic lag at which to compute dependence
-#' @param intensity vector containing the intensity values that the heatmaps
+#' @param intensity Vector containing the values to calculate the specified dependency in the network. Usually the node mean intensities.
+#' @param partial_neighborhood use partial neighborhood (TRUE) or cumulative (FALSE). TRUE by default
 #' 
 #' @return A vector containing the dependence statistics (ascending from order 0). 
 #' 
@@ -103,24 +107,24 @@ intensitynet <- function(adjacency_mtx, node_coords, event_coords, graph_type = 
 #'                                    intensity = igraph::vertex_attr(g)$intensity)
 #' 
 #' @export
-NodeGeneralCorrelation <- function(obj, dep_type, lag_max, intensity){
+NodeGeneralCorrelation <- function(obj, dep_type, lag_max, intensity, partial_neighborhood = TRUE){
   UseMethod("NodeGeneralCorrelation")
 }
 
 
-#' Gives node local moran-i or geary-c correlations
+#' Gives the node local Moran-I, Getis-Gstar or Geary-c correlations
 #' 
 #' @name NodeLocalCorrelation
 #' 
 #' @source *"A Local Indicator of Multivariate SpatialAssociation: Extending Geary's c, Geographical Analysis" Luc Anselin (2018) <doi:10.1111/gean.12164>
 #'
 #' @param obj intensitynet object
-#' @param dep_type 'moran', 'getis' or 'geary'. Type of local correlation to be computed (Moran-i, Getis-Gstar, Geary-c*),
+#' @param dep_type 'moran', 'getis' or 'geary'. Type of local correlation to be computed (Moran-i, Getis-Gstar, Geary-c),
 #' default = 'moran'.
-#' @param intensity vector containing the intensity values that which are used to calculate the correlation.
+#' @param intensity vector containing the values to calculate the specified correlation for each node in the network.
 #' 
-#' @return intensitynet class object which contains an igraph network with the selected correlation 
-#' added into the vertices attributes
+#' @return a vector containing two values. The first value is a vector with the specified local correlations for each node. 
+#' The second values is the  given intensitynet class object but with the correlations added to the node attributes of its network. 
 #' 
 #' @examples 
 #' \dontrun{
@@ -138,19 +142,29 @@ NodeLocalCorrelation <- function(obj, dep_type = 'moran', intensity){
 }
 
 
-#' Plot the network and if specified, the correlation heatmap. Which could be:
+#' Plot the network correlations or intensities.
 #'
 #' @name PlotHeatmap
 #'
 #' @param obj intensitynet object
-#' @param heattype 'moran': Local Moran-i correlation (with 999 permutations), 'geary': Local Geary-c* 
-#' correlation. The correlations will use the indicated intensity type.
-#' The function also allow to only plot the intensity heatmap 'v_intensity' for vertices or 'e_intensity' for edges.
-#' @param intensity_type name of the intensity used to plot the heatmap. For undirected networks: 'intensity'. 
+#' @param heat_type a string with the desired heatmap to be plotted, the options are; 
+#' 'moran': Local Moran-i correlation (with 999 permutations), 
+#' 'geary': Local Geary-c correlation. The correlations will use the indicated intensity type,
+#' 'v_intensity': vertex mean intensity,
+#' 'e_intensity': edge intensity,
+#' mark name: name of the mark (string) to plot its edge proportion,
+#' 'none': plain map.
+#' @param intensity_type name of the vertex intensity used to plot the heatmap for moran, geary and v_intensity options (of the heat_type argument).
+#' The options are; 
+#' For undirected networks: 'intensity'. 
 #' For directed networks: 'intensity_in' or 'intensity_out'. For mixed networks: 'intensity_in', 'intensity_out', 
-#' 'intensity_und' or 'intensity_all'. If the intensity parameter is NULL, the function will use, if exist, 
-#' the intensity (undirected) or intensity_in (directed) values from the network nodes.
-#' @param net_vertices chosen vertices to plot the heatmap (or it related edges in case to plot the edge heatmap)
+#' 'intensity_und' or 'intensity_all'. If the intensity parameter is 'none', the function will use, if exist, 
+#' the intensity (undirected) or intensity_in (directed) values from the network nodes. If the heat_type is 'e_intensity', this
+#' parameter will be skipped and plot the edge intensities instead.
+#' @param net_vertices chosen vertices to plot the heatmap (or its related edges in case to plot the edge heatmap)
+#' @param net_edges chosen edges to plot the heatmap, can be either the edge id's or its node endpoints (e.j. c(1,2, 2,3, 7,8))
+#' @param show_events option to show the events as orange squares, FALSE by default
+#' @param alpha optional argument to set the transparency of the events (show_events = TRUE). The range is from 0.1 (transparent) to 1 (opaque). Default: alpha = 1
 #' @param ... extra arguments for the class ggplot
 #' 
 #' @return The plot of the heatmap with class c("gg", "ggplot")
@@ -159,11 +173,11 @@ NodeLocalCorrelation <- function(obj, dep_type = 'moran', intensity){
 #' 
 #' \dontrun{
 #' data("und_intnet_chicago")
-#' PlotHeatmap(und_intnet_chicago, heattype='moran')
+#' PlotHeatmap(und_intnet_chicago, heat_type='moran')
 #' }
 #' 
 #' @export
-PlotHeatmap <- function(obj, heattype = 'none', intensity_type = 'none', net_vertices = NULL, ...){
+PlotHeatmap <- function(obj, heat_type = 'none', intensity_type = 'none', net_vertices = NULL, net_edges = NULL, show_events = FALSE, alpha = 1, ...){
   UseMethod("PlotHeatmap")
 }
 
@@ -172,7 +186,7 @@ PlotHeatmap <- function(obj, heattype = 'none', intensity_type = 'none', net_ver
 #' 
 #' @name PlotNeighborhood
 #' 
-#' @param obj Intensitynet object
+#' @param obj intensitynet object
 #' @param node_id Id of the node which the plot will be focused
 #' @param ... Extra arguments for plotting
 #' 
@@ -219,65 +233,73 @@ ShortestNodeDistance <- function(obj, node_id1, node_id2){
 
 # -------- Intensity functions ----------
 
-#' Calculates the intensity of the given path
+#' Calculates the total weight of the given path
 #'
-#' @name PathIntensity
+#' @name PathTotalWeight
 #'
 #' @param obj intensitynet object
 #' @param path_nodes vector containing the node ID's of the path
+#' @param weight an string specifying the type of weight to be computed. If no weight type is provided,
+#' the function will calculate the total amount of edges. Default NA.
 #' 
-#' @return intensity of the path
+#' @return total weight of the path
 #' 
 #' @examples
 #' 
 #' data("und_intnet_chicago")
-#' short_path <- ShortestPathIntensity(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300')
-#' PathIntensity(und_intnet_chicago, short_path$path)
+#' PathTotalWeight(und_intnet_chicago, c('V115', 'V123', 'V125', 'V134'), weight = 'intensity')
 #' 
 #' @export
-PathIntensity <- function(obj, path_nodes){
-  UseMethod("PathIntensity")
+PathTotalWeight <- function(obj, path_nodes, weight = NA){
+  UseMethod("PathTotalWeight")
 }
 
 
-#' Calculates the shortest path between two vertices and calculates its intensity
+#' Calculates the shortest path between two vertices (based on the minimum amount of edges) and 
+#' calculates its total weight
 #'
-#' @name ShortestPathIntensity
+#' @name ShortestPath
 #'
 #' @param obj intensitynet object
 #' @param node_id1 starting node
 #' @param node_id2 ending node
-#' @param weighted TRUE or FALSE (default), tell if the distances must be taken into account 
+#' @param weight an string, calculate the shortest path based on this type of weight. If no weight type is provided,
+#' the function will calculate the shortest path based on the minimum amount of edges. Default NA.
+#' @param mode Character 'in', 'out', 'all' (default). Gives whether the shortest paths to or from the given vertices 
+#' should be calculated for directed graphs. If out then the shortest paths from the vertex, if in 
+#' then to it will be considered. If all, the default, then the corresponding undirected graph will be used, ie. not 
+#' directed paths are searched. This argument is ignored for undirected graphs.
 #' 
-#' @return intensity of the shortest path and the path vertices
+#' @return total weight of the shortest path and the path vertices with class igraph.vs
 #' 
 #' @examples
 #' 
 #' data("und_intnet_chicago")
-#' ShortestPathIntensity(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300')
+#' ShortestPath(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300', weight = 'intensity')
 #' 
 #' @export
-ShortestPathIntensity <- function(obj,  node_id1, node_id2, weighted = FALSE){
-  UseMethod("ShortestPathIntensity")
+ShortestPath <- function(obj,  node_id1, node_id2, weight = NA, mode = 'all'){
+  UseMethod("ShortestPath")
 }
 
-#' Calculates edgewise and mean nodewise intensities for the given intensitynet object
+#' Calculates edgewise and mean nodewise intensities for the given intensitynet object and, for each edge, the proportions of
+#' all event covariates.
 #' 
-#' @name CalculateEventIntensities
+#' @name RelateEventsToNetwork
 #' 
-#' @param obj intensitynetDir object
+#' @param obj intensitynet object
 #' 
-#' @return proper intensitynet object (Undirected, Directed or Mixed) with a graph containing all the intensities as 
-#' attributes of its nodes and edges
+#' @return proper intensitynet object (Undirected, Directed, or Mixed) with a graph containing the nodewise intensity in the node 
+#' attributes and the edgewise intensities and event covariate proportions as edge attributes.
 #' 
 #' @examples 
 #'
 #' data("und_intnet_chicago")
-#' intnet_chicago <- CalculateEventIntensities(und_intnet_chicago)
+#' intnet_chicago <- RelateEventsToNetwork(und_intnet_chicago)
 #' 
 #' @export
-CalculateEventIntensities <- function(obj){
-  UseMethod("CalculateEventIntensities")
+RelateEventsToNetwork <- function(obj){
+  UseMethod("RelateEventsToNetwork")
 }
 
 
@@ -286,23 +308,18 @@ MeanNodeIntensity <- function(obj, node_id){
 }
 
 
-EdgeIntensity <- function(obj, node_id1, node_id2, z){
+EdgeIntensity <- function(obj, node_id1, node_id2){
   UseMethod("EdgeIntensity")
 }
 
 
-AllEdgeIntensities <- function(obj, z){
-  UseMethod("AllEdgeIntensities")
+EdgeIntensitiesAndProportions <- function(obj){
+  UseMethod("EdgeIntensitiesAndProportions")
 }
 
 
 SetNetworkAttribute <- function(obj, where, name, value){
   UseMethod("SetNetworkAttribute")
-}
-
-
-LaplacianGearyRepresentation <- function(obj,  intensity_type = 'none'){
-  UseMethod("LaplacianGearyRepresentation")
 }
 
 
@@ -314,23 +331,25 @@ LaplacianGearyRepresentation <- function(obj,  intensity_type = 'none'){
 #' @param obj intensitynet object
 #' @param node_id1 First node ID of the edge
 #' @param node_id2 Second node ID of the edge
-#' @param z Maximum distance between the event and the edge to consider the event part of the edge.
 #' 
 #' @return Intensity of the edge
 #' 
-EdgeIntensity.intensitynet <- function(obj,  node_id1, node_id2, z = 5){
+EdgeIntensity.intensitynet <- function(obj,  node_id1, node_id2){
   if(node_id1 == node_id2){
     stop("The two vertices cannot be the same.")
   }
   
-  if(z <= 0){
-    message("Warning: 'z' cannot be equal or less than 0, using default.")
+  if(obj$event_correction < 0){
+    message("Warning: event correction value cannot be less than 0, using default.")
     z <- 5
+  }
+  else{
+    z <- obj$event_correction
   }
   
   g <- obj$graph
   distances_mtx <- obj$distances_mtx
-  event_coords <- obj$events
+  event_data <- obj$events
   
   # Note that the igraph library already handle the error when one of the node id's 
   # are not part of the graph. Also gives the proper information about it.
@@ -352,7 +371,7 @@ EdgeIntensity.intensitynet <- function(obj,  node_id1, node_id2, z = 5){
     error=function(cond) {
       neighbors_list <- igraph::neighbors(g, node_id1)
       if(! igraph::V(g)[node_id2] %in% neighbors_list){
-        message("Second vertice (node_id2) it's not a neighbor of first vertice (node_id1)")
+        message("Second vertex (node_id2) it's not a neighbor of first vertex (node_id1)")
       }else{
         message(cond)
       }
@@ -364,8 +383,8 @@ EdgeIntensity.intensitynet <- function(obj,  node_id1, node_id2, z = 5){
   
   indicator <- 0
   # Counting events
-  for(row in 1:nrow(event_coords)) {
-    ep <- c(event_coords[row, 1], event_coords[row, 2])
+  for(row in 1:nrow(event_data)) {
+    ep <- c(event_data[row, 1], event_data[row, 2])
     dist_obj <- list(p1 = node1, p2 = node2, ep = ep)
     class(dist_obj) <- 'netTools'
     d <- PointToSegment(dist_obj)
@@ -382,175 +401,215 @@ EdgeIntensity.intensitynet <- function(obj,  node_id1, node_id2, z = 5){
 }
 
 
-#' Calculate all the edge intensities of the graph. It's more accurate than using iteratively the 
+#' Calculate all the edge intensities of the graph. It's more fast than using iteratively the 
 #' function EdgeIntensity for all edges.
 #' 
-#' @name AllEdgeIntensities.intensitynet
+#' @name EdgeIntensitiesAndProportions.intensitynet
 #' 
 #' @param obj intensitynet object
-#' @param z Maximum distance between the event and the edge to consider the event part of the edge.
 #' 
 #' @return intensitynet class object where the graph contains all the edge intensities as an attribute
 #' 
-AllEdgeIntensities.intensitynet <- function(obj, z = 5){
-  if(z <= 0){
-    message("Warning: 'z' cannot be equal or less than 0, using default.")
+EdgeIntensitiesAndProportions.intensitynet <- function(obj){
+  if(obj$event_correction < 0){
+    message("Warning: event correction value cannot be less than 0, using default.")
     z <- 5
   }
+  else{
+    z <- obj$event_correction
+  }
+  
   g <- obj$graph
   distances_mtx <- obj$distances_mtx
-  event_coords <- obj$events
+  event_data <- obj$events
   edge_list <- igraph::ends(g, igraph::E(g), names=FALSE)
   
-  if(length(event_coords) == 0){
+  if(length(event_data) == 0){
     return(NA)
   }
   
-  edge_events <- edge_list[,1]
-  edge_events <- cbind(edge_events, edge_list[,2])
-  edge_events <- cbind(edge_events, 0)
-  edge_events <- cbind(edge_events, 0)
-  colnames(edge_events) <- c('from', 'to', 'n_events', 'intensity')
+  from_coords <- igraph::vertex_attr(graph = g, name = "xcoord", index = edge_list[,1])
+  from_coords <- cbind(from_coords, igraph::vertex_attr(graph = g, name = "ycoord", index = edge_list[,1]))
   
-  node_coords <- as.numeric(igraph::V(g))
-  node_coords <- cbind(node_coords, igraph::vertex_attr(g, "xcoord"))
-  node_coords <- cbind(node_coords, igraph::vertex_attr(g, "ycoord"))
-  colnames(node_coords) <- c('node', 'xcoord', 'ycoord')
+  to_coords <- igraph::vertex_attr(graph = g, name = "xcoord", index = edge_list[,2])
+  to_coords <- cbind(to_coords, igraph::vertex_attr(graph = g, name = "ycoord", index = edge_list[,2]))
   
-  #start_time <- Sys.time() # debug only
-  pb = utils::txtProgressBar(min = 0, max = nrow(event_coords), initial = 0) 
-  message("Calculating edge intensities...")
+  # Prepare structure to set information in the edges
+  edge_events <- data.frame(from = edge_list[,1], 
+                            to = edge_list[,2],
+                            n_events = 0,
+                            intensity = 0)
+  
+  # Set up the names for the covariates of the events
+  if(ncol(event_data) > 2){
+    for(i in 3:ncol(event_data)){
+      if(is.numeric(event_data[,i])){
+        edge_events[colnames(event_data[i])] <- 0 # Set event column name
+      }else{
+        edge_events[as.character(unique(event_data[[i]]))] <- 0 # Set event unique variables as names
+      }
+    }
+  }
+  
+  message(paste0("\nCalculating edge intensities with event error distance of ", obj$event_correction ,"..."))
+  pb = utils::txtProgressBar(min = 0, max = nrow(event_data), initial = 0, style=3) 
   
   e_count <- 0
-  for(row in 1:nrow(event_coords)){
+  for(row in 1:nrow(event_data)){
     utils::setTxtProgressBar(pb, row)
     tmp_edge <- NULL
     shortest_d <- NULL
-    for(edge_row in 1:nrow(edge_events)){
-      # Check if the intensities are already calculated
-      if(row == 1){
-        if(!is.null(igraph::edge_attr(g, 'intensity', igraph::E(g)[edge_row]))){
-          e_count <- e_count + 1
-          next
+    
+    ep <- event_data[row, ]
+    dist_obj <- list(p1 = from_coords, p2 = to_coords, ep = ep[,1:2])
+    class(dist_obj) <- 'netTools'
+    event_seg_dist <- PointToSegment(dist_obj)
+    
+    closest_e <- which.min(event_seg_dist)
+    
+    # Check if the intensities are already calculated
+    if(!is.null(igraph::edge_attr(g, 'intensity', igraph::E(g)[closest_e]))){
+      e_count <- e_count + 1
+      next
+    }
+    
+    # Check if the closest edge is in the required boundary and, if so,
+    # set up the information (except intensity) to the edge_event DataFrame
+    if ( event_seg_dist[closest_e] <= z ){
+      edge_events[closest_e, 'n_events'] <- edge_events[closest_e, 'n_events'] + 1
+      
+      if(ncol(ep) > 2){
+        for(i_col in 3:ncol(ep)){
+          if( is.numeric(ep[,i_col]) ){
+            tmp_str <- colnames(ep[i_col])
+            edge_events[closest_e, tmp_str] <- edge_events[closest_e, tmp_str] + ep[,i_col]
+          }else{
+            tmp_str <-  as.character(ep[,i_col])
+            edge_events[closest_e, tmp_str] <- edge_events[closest_e, tmp_str] + 1
+          }
         }
       }
-      # Faster but only works if the node ID is the same as its index
-      node1 <- node_coords[edge_events[edge_row, 'from'],][2:3]
-      node2 <- node_coords[edge_events[edge_row, 'to'],][2:3]
-      
-      ep <- event_coords[row, ]
-      dist_obj <- list(p1 = node1, p2 = node2, ep = ep)
-      class(dist_obj) <- 'netTools'
-      d <- PointToSegment(dist_obj)
-      
-      # If the event is at a distance less or equal 'z' from the edge (segment)
-      # connecting both given points (the road), then is counted as an event of that road
-      if(d <= z){
-        if(d == 0){
-          tmp_edge <- edge_row
-          break
-        }
-        if (is.null(shortest_d) || d < shortest_d){
-          tmp_edge <- edge_row
-        }
-      }
-    }
-    if (!is.null(tmp_edge)){
-      edge_events[tmp_edge, 'n_events'] <- edge_events[tmp_edge, 'n_events'] + 1
-    }
-    # If the intensity of all edges is already calculated return the object
-    if(row == 1){
-      if(e_count == length(igraph::E(g))){
-        message("Intensities were already calculated.")
-        return(obj)
-      } 
     }
   }
   close(pb)
-  #message(paste0("Time: ", Sys.time() - start_time)) # debug only
+  # If the intensity of all edges is already calculated return the object
+  if(e_count == nrow(event_data)){
+    return(obj)
+  } 
   
+  #Calculate intensity and proportions
   for (edge_row in 1:nrow(edge_events)) {
-    # Distance between the node and its neighbor
-    edge_dist <- abs(distances_mtx[edge_events[edge_row, 'from'], edge_events[edge_row, 'to']])
-    edge_events[edge_row, 'intensity'] <-  edge_events[edge_row, 'n_events'] / edge_dist
+    if(edge_events[edge_row, 'n_events'] > 0 ){
+      # Distance between the node and its neighbor
+      edge_dist <- abs(distances_mtx[edge_events[edge_row, 'from'], edge_events[edge_row, 'to']])
+      edge_events[edge_row, 'intensity'] <-  edge_events[edge_row, 'n_events'] / edge_dist
+      
+      if(ncol(edge_events) > 4){
+        for(i_col in 5:ncol(edge_events)){
+          edge_events[edge_row, i_col] <- edge_events[edge_row, i_col] / edge_events[edge_row, 'n_events'] 
+        }
+      }
+    }
   }
-  SetNetworkAttribute(obj = obj, 
-                      where = 'edge', 
-                      name = 'intensity', 
-                      value = as.matrix(edge_events[, 'intensity']))
+  
+  # Save information from 'edge_events' to the edge attributes of the network
+  for(i_col in 3:ncol(edge_events)){
+    obj <- SetNetworkAttribute(obj = obj, 
+                               where = 'edge', 
+                               name = colnames(edge_events[i_col]), 
+                               value = as.matrix(edge_events[, i_col]))
+  }
+  return(obj)
 }
 
 
-#' Calculates the intensity of the given path
+#' Calculates the total weight of the given path
 #'
-#' @name PathIntensity.intensitynet
+#' @name PathTotalWeight.intensitynet
 #'
 #' @param obj intensitynet object
 #' @param path_nodes vector containing the node ID's of the path
+#' @param weight an string specifying the type of weight to be computed. If no weight type is provided,
+#' the function will calculate the total amount of edges. Default NA.
 #' 
-#' @return intensity of the path
+#' @return total weight of the path
 #' 
 #' @examples
 #' 
 #' data("und_intnet_chicago")
-#' short_path <- ShortestPathIntensity(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300')
-#' PathIntensity(und_intnet_chicago, short_path$path)
+#' PathTotalWeight(und_intnet_chicago, c('V115', 'V123', 'V125', 'V134'), weight = 'intensity')
 #' 
 #' @export
-PathIntensity.intensitynet <- function(obj, path_nodes){
-  edge_counts <- list()
-  path_intensity <- 0
+PathTotalWeight.intensitynet <- function(obj, path_nodes, weight = NA){
+  g <- obj$graph
   
-  prev <- NULL
-  for(node_id in path_nodes){
-    if(is.null(prev)){
-      prev <- node_id
-      next
-    }
-    
-    path_intensity <- path_intensity + Reduce('+', EdgeIntensity(obj, prev, node_id))
-    
-    prev <- node_id
+  if(!is.na(weight) && !(weight %in% igraph::edge_attr_names(g))){
+    warning("The given weight doens't exist in the edge attributes, using default instead (NA)")
+    weight = NA
   }
-  # Divide the intensity of the edges by their number (In a path -> N edges = N vertices - 1)
-  path_intensity <- path_intensity / (length(path_nodes) - 1)
   
-  path_intensity
+  path_edges <- igraph::E(g, path = c(1,2,5,7))
+  
+  if (is.na(weight)){
+    total_weight <- length(path_edges)
+  }else{
+    total_weight <- sum(igraph::edge_attr(g, name = weight, index = path_edges))
+  }
+  
+  total_weight
 }
 
 
-#' Calculates the shortest path between two vertices and calculates its intensity
+#' Calculates the shortest path between two vertices (based on the minimum amount of edges) and 
+#' calculates its total weight
 #'
-#' @name ShortestPathIntensity.intensitynet
+#' @name ShortestPath.intensitynet
 #'
 #' @param obj intensitynet object
 #' @param node_id1 starting node
 #' @param node_id2 ending node
-#' @param weighted TRUE or FALSE (default), tell if the distances must be taken into account 
+#' @param weight an string, calculate the shortest path based on this type of weight. If no weight type is provided,
+#' the function will calculate the shortest path based on the minimum amount of edges. Default NA.
+#' @param mode Character 'in', 'out', 'all' (default). Gives whether the shortest paths to or from the given vertices 
+#' should be calculated for directed graphs. If out then the shortest paths from the vertex, if in 
+#' then to it will be considered. If all, the default, then the corresponding undirected graph will be used, ie. not 
+#' directed paths are searched. This argument is ignored for undirected graphs.
 #' 
-#' @return intensity of the shortest path and the path vertices
+#' @return total weight of the shortest path and the path vertices with class igraph.vs
 #' 
 #' @examples
 #'
 #' data("und_intnet_chicago")
-#' ShortestPathIntensity(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300')
+#' ShortestPath(und_intnet_chicago, node_id1 = 'V1', node_id2 = 'V300', weight = 'intensity')
 #' 
 #' @export
-ShortestPathIntensity.intensitynet <- function(obj,  node_id1, node_id2, weighted = FALSE){
+ShortestPath.intensitynet <- function(obj,  node_id1, node_id2, weight = NA, mode = 'all'){
   g <- obj$graph
   
-  if(weighted){
-    path <- ShortestNodeDistance(obj, node_id1, node_id2)$path
-  }else{
-    path <- unlist(igraph::get.shortest.paths(g, node_id1, node_id2)$vpath)
+  if(!is.na(weight) && !(weight %in% igraph::edge_attr_names(g))){
+    warning("The given weight doens't exist in the edge attributes, using default instead (NA)")
+    weight = NA
   }
   
-  return(list(intensity = PathIntensity(obj, path), path = path))
+  if (is.na(weight)){
+    path_data <- igraph::shortest_paths(graph = g, from = node_id1, to = node_id2, mode = mode, weights = NA, output = 'both')
+    total_weight <- length(path_data$vpath[[1]])
+  }else{
+    
+    # Remove any decimal by multiplitying with the maximum amount of possible decimals, then add 1 to remove 0 weight edges,
+    # this is done to make sure that the shortest path igraph function take into account all decimals
+    weight_vector <- igraph::edge_attr(g)[[weight]] * 100000000 + rep(1, igraph::gsize(g))
+    
+    path_data <- igraph::shortest_paths(graph = g, from = node_id1, to = node_id2, mode = mode, weights = weight_vector, output = 'both')
+    total_weight <- sum(igraph::edge_attr(graph = g, weight, index = path_data$vpath[[1]]))
+  }
+  return(list(total_weight = total_weight, path = path_data$vpath[[1]]))
 }
 
 
-#' Gives general node correlation of the network (choosing from normal correlation, covariance, 
-#' moran-i or geary)
+#' It allows to compute different dependence statistics on the network
+#' for the given vector and for neighborhoods of distinct order. Such statistics are; correlation,
+#' covariance, Moran’s I and Geary’s C. 
 #' 
 #' @name NodeGeneralCorrelation.intensitynet
 #'
@@ -558,7 +617,8 @@ ShortestPathIntensity.intensitynet <- function(obj,  node_id1, node_id2, weighte
 #' @param dep_type 'correlation', 'covariance', moran', 'geary'. The type of 
 #' dependence statistic to be computed.
 #' @param lag_max Maximum geodesic lag at which to compute dependence
-#' @param intensity vector containing the intensity values that the heatmaps
+#' @param intensity Vector containing the values to calculate the specified dependency in the network. Usually the node mean intensities.
+#' @param partial_neighborhood use partial neighborhood (TRUE) or cumulative (FALSE). TRUE by default
 #' 
 #' @return A vector containing the dependence statistics (ascending from order 0). 
 #' 
@@ -570,26 +630,30 @@ ShortestPathIntensity.intensitynet <- function(obj,  node_id1, node_id2, weighte
 #'                                    intensity = igraph::vertex_attr(g)$intensity)
 #' 
 #' @export
-NodeGeneralCorrelation.intensitynet <- function(obj, dep_type, lag_max, intensity){
+NodeGeneralCorrelation.intensitynet <- function(obj, dep_type, lag_max, intensity, partial_neighborhood = TRUE){
   g <- obj$graph
   g_sna <- intergraph::asNetwork(g)
-  sna::nacf(g_sna, intensity, type = dep_type, mode = "graph", lag.max = lag_max)
+  
+  if(obj$graph_type == 'undirected') m <- 'graph'
+  else m <- 'digraph'
+  
+  sna::nacf(g_sna, intensity, type = dep_type, mode = m, lag.max = lag_max, partial.neighborhood = partial_neighborhood)
 }
 
 
-#' Gives node local moran-i or geary-c correlations
+#' Gives the node local Moran-I, Getis-Gstar or Geary-c correlations
 #' 
 #' @name NodeLocalCorrelation.intensitynet
 #' 
 #' @source *Luc Anselin. A Local Indicator of Multivariate SpatialAssociation: Extending Geary's c, Geographical Analysis 2018; doi: https://doi.org/10.1111/gean.12164
 #'
 #' @param obj intensitynet object
-#' @param dep_type 'moran', 'getis' or 'geary'. Type of local correlation to be computed (Moran-i, Getis-Gstar, Geary-c*),
+#' @param dep_type 'moran', 'getis' or 'geary'. Type of local correlation to be computed (Moran-i, Getis-Gstar, Geary-c),
 #' default = 'moran'.
-#' @param intensity vector containing the intensity values that which are used to calculate the correlation.
+#' @param intensity vector containing the values to calculate the specified correlation for each node in the network.
 #' 
-#' @return intensitynet class object which contains an igraph network with the selected correlation 
-#' added into the vertices attributes
+#' @return a vector containing two values. The first value is a vector with the specified local correlations for each node. 
+#' The second values is the  given intensitynet class object but with the correlations added to the node attributes of its network. 
 #' 
 #' @examples 
 #' \dontrun{
@@ -653,19 +717,29 @@ NodeLocalCorrelation.intensitynet <- function(obj, dep_type = 'moran', intensity
 }
 
 
-#' Plot the network and if specified, the correlation heatmap. Which could be:
+#' Plot the network correlations or intensities.
 #'
 #' @name PlotHeatmap.intensitynet
 #'
 #' @param obj intensitynet object
-#' @param heattype 'moran': Local Moran-i correlation (with 999 permutations), 'geary': Local Geary-c* 
-#' correlation. The correlations will use the indicated intensity type.
-#' The function also allow to only plot the intensity heatmap 'v_intensity' for vertices or 'e_intensity' for edges.
-#' @param intensity_type name of the intensity used to plot the heatmap. For undirected networks: 'intensity'. 
+#' @param heat_type a string with the desired heatmap to be plotted, the options are; 
+#' 'moran': Local Moran-i correlation (with 999 permutations), 
+#' 'geary': Local Geary-c correlation. The correlations will use the indicated intensity type,
+#' 'v_intensity': vertex mean intensity,
+#' 'e_intensity': edge intensity,
+#' mark name: name of the mark (string) to plot its edge proportion,
+#' 'none': plain map.
+#' @param intensity_type name of the vertex intensity used to plot the heatmap for moran, geary and v_intensity options (of the heat_type argument).
+#' The options are; 
+#' For undirected networks: 'intensity'. 
 #' For directed networks: 'intensity_in' or 'intensity_out'. For mixed networks: 'intensity_in', 'intensity_out', 
-#' 'intensity_und' or 'intensity_all'. If the intensity parameter is NULL, the function will use, if exist, 
-#' the intensity (undirected) or intensity_in (directed) values from the network nodes.
-#' @param net_vertices chosen vertices to plot the heatmap (or it related edges in case to plot the edge heatmap)
+#' 'intensity_und' or 'intensity_all'. If the intensity parameter is 'none', the function will use, if exist, 
+#' the intensity (undirected) or intensity_in (directed) values from the network nodes. If the heat_type is 'e_intensity', this
+#' parameter will be skipped and plot the edge intensities instead.
+#' @param net_vertices chosen vertices to plot the heatmap
+#' @param net_edges chosen edges to plot the heatmap, can be either the edge id's or its node endpoints (e.j. c(1,2, 2,3, 7,8))
+#' @param show_events option to show the events as orange squares, FALSE by default
+#' @param alpha optional argument to set the transparency of the events (show_events = TRUE). The range is from 0.1 (transparent) to 1 (opaque). Default: alpha = 1
 #' @param ... extra arguments for the class ggplot
 #' 
 #' @return The plot of the heatmap with class c("gg", "ggplot")
@@ -674,29 +748,41 @@ NodeLocalCorrelation.intensitynet <- function(obj, dep_type = 'moran', intensity
 #' 
 #' \dontrun{
 #' data("und_intnet_chicago")
-#' PlotHeatmap(und_intnet_chicago, heattype='moran')
+#' PlotHeatmap(und_intnet_chicago, heat_type='moran')
 #' }
 #' 
 #' @export
-PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'none', net_vertices = NULL, ...){
+PlotHeatmap.intensitynet <- function(obj, heat_type = 'none', intensity_type = 'none', net_vertices = NULL, net_edges = NULL, show_events = FALSE, alpha = 1, ...){
   g <- obj$graph
   adj_mtx <- igraph::as_adj(graph = g)
   adj_listw <- spdep::mat2listw(adj_mtx)
   nb <- adj_listw$neighbours
   w_listw <- spdep::nb2listw(nb, style = "W",  zero.policy=TRUE)
   
-  if(heattype != 'none' && heattype != 'moran' && heattype != 'geary' && 
-     heattype != 'v_intensity' && heattype != 'e_intensity' && heattype != 'intensity'){
-    warning('Parameter "heattype" should be "moran", "geary", "intensity", 
-            "v_intensity", "e_intensity" or "none". Using default ("none").')
+  if(heat_type != 'none' && heat_type != 'moran' && heat_type != 'geary' && 
+     heat_type != 'v_intensity' && heat_type != 'e_intensity'){
+    
+    if( !(heat_type %in% igraph::edge_attr_names(g) ))
+    {
+      warning('Parameter "heat_type" should be; for correlations: "moran" or "geary", 
+                                               for intensities: "v_intensity" or "e_intensity", 
+                                               for marks: the name of the mark. 
+                                               Using default ("none").')
+      heat_type <- 'none'
+    }
   }
   
-  if (is.null(net_vertices)){
+  if (is.null(net_vertices) && is.null(net_edges)){
     net_vertices <- igraph::V(g)
+    net_edges <- igraph::E(g)
+  } else if (!is.null(net_vertices)){
+    net_vertices <- igraph::V(g)[net_vertices] # Convert to class 'igraph.v'
+  }else if(!methods::is(net_edges, 'igraph.es')){
+    net_edges <- igraph::E(g, P = net_edges) # Convert to class 'igraph.es'
   }
   
   # If the intensity is not provided, try to take it from the given network
-  if( intensity_type == 'none' || is.null(igraph::vertex_attr(graph = g, name = intensity_type)) ){
+  if( is.null(igraph::vertex_attr(graph = g, name = intensity_type)) ){
     if( intensity_type != 'none' && is.null(igraph::vertex_attr(graph = g, name = intensity_type))){
       warning(paste0("The given intensity type '", intensity_type, "', doestn't match any of the network intensities."))
     }
@@ -715,7 +801,7 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
                             ycoord = igraph::vertex_attr(graph = g, name = 'ycoord'))
   rownames(node_coords) <- igraph::vertex_attr(graph = g, name = 'name')
   
-  if(heattype == 'moran'){ # Local Moran-i
+  if(heat_type == 'moran'){ # Local Moran-i
     locmoran <- spdep::localmoran_perm(x = intensity, 
                                        listw = w_listw, 
                                        zero.policy = TRUE, 
@@ -747,7 +833,7 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
                           ycoord = node_coords$ycoord, 
                           value = sig_dstr)
     
-  }else if(heattype == 'geary'){  # Local Geary-c
+  }else if(heat_type == 'geary'){  # Local Geary-c
     nb_b <- spdep::listw2mat(w_listw)
     
     b <- methods::as(nb_b, "CsparseMatrix")
@@ -788,7 +874,7 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
                           ycoord = node_coords$ycoord, 
                           value = sig_dstr)
     
-  }else if(heattype == 'getis'){ # Local Getis-G*
+  }else if(heat_type == 'getis'){ # Local Getis-G*
     message("Needs implementation")
     # TODO: Implement Getis G.
     
@@ -803,17 +889,7 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
     
     
     
-  }else if(heattype == 'v_intensity'){
-    norm_int <- (intensity - min(intensity)) / (max(intensity) - min(intensity))
-    data_df <- data.frame(xcoord = node_coords$xcoord, 
-                          ycoord = node_coords$ycoord, 
-                          value = norm_int)
-    
-  }else if(heattype == 'e_intensity'){
-    data_df <- data.frame(xcoord = node_coords$xcoord, 
-                          ycoord = node_coords$ycoord)
-    
-  }else if(heattype == 'intensity'){
+  }else if(heat_type == 'v_intensity' || heat_type == 'e_intensity'){
     norm_int <- (intensity - min(intensity)) / (max(intensity) - min(intensity))
     data_df <- data.frame(xcoord = node_coords$xcoord, 
                           ycoord = node_coords$ycoord, 
@@ -824,10 +900,16 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
                           ycoord = node_coords$ycoord, 
                           value = NA)
   }
-  geoplot_obj <- list(graph = g, data_df = data_df, net_vertices = net_vertices, mode = heattype)
+  geoplot_obj <- list(intnet = obj, 
+                      data_df = data_df, 
+                      net_vertices = net_vertices, 
+                      net_edges = net_edges,
+                      mode = heat_type, 
+                      show_events = show_events,
+                      alpha = alpha)
   class(geoplot_obj) <- "netTools"
   
-  GeoreferencedGgplot2(geoplot_obj, ...)
+  return( GeoreferencedGgplot2(geoplot_obj, ...) )
 }
 
 
@@ -835,7 +917,7 @@ PlotHeatmap.intensitynet <- function(obj, heattype = 'none', intensity_type = 'n
 #' 
 #' @name PlotNeighborhood.intensitynet
 #' 
-#' @param obj Intensitynet object
+#' @param obj intensitynet object
 #' @param node_id Id of the node which the plot will be focused
 #' @param ... Extra arguments for plotting
 #' 
@@ -915,7 +997,8 @@ SetNetworkAttribute.intensitynet <- function(obj, where, name, value){
   intnet <- list(graph = g, 
                  events = obj$events, 
                  graph_type = obj$graph_type, 
-                 distances_mtx = obj$distances_mtx)
+                 distances_mtx = obj$distances_mtx,
+                 event_correction = obj$event_correction)
   attr(intnet, 'class') <- class(obj)
   intnet
 }
@@ -986,14 +1069,17 @@ ApplyWindow.intensitynet <- function(obj, x_coords, y_coords){
   intnet <- list(graph = sub_g, 
                  events = sub_e_coords, 
                  graph_type = obj$graph_type, 
-                 distances_mtx = sub_dist_mtx)
+                 distances_mtx = sub_dist_mtx,
+                 event_correction = obj$event_correction)
   attr(intnet, 'class') <- class(obj)
   
   intnet
 }
 
 
-#' Calculates the shortest distance path between two nodes 
+#' Calculates the shortest distance path between two nodes (based on the minimum amount of edges).
+#' The function also returns the total weight of the path, if the weight is not available, returns
+#' the number of edges.
 #'
 #' @name ShortestNodeDistance.intensitynet
 #'

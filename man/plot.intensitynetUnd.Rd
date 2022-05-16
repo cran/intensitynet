@@ -10,6 +10,9 @@
   edge_labels = "none",
   xy_axes = TRUE,
   enable_grid = FALSE,
+  show_events = FALSE,
+  alpha = 1,
+  path = NULL,
   ...
 )
 }
@@ -23,6 +26,12 @@
 \item{xy_axes}{show the x and y axes}
 
 \item{enable_grid}{draw a background grid}
+
+\item{show_events}{option to show the events as orange squares, FALSE by default}
+
+\item{alpha}{optional argument to set the transparency of the events (show_events = TRUE). The range is from 0.1 (transparent) to 1 (opaque). Default: alpha = 1}
+
+\item{path}{vector with the nodes of the path to be highlighted. Default NULL}
 
 \item{...}{extra arguments for the plot}
 }
@@ -38,5 +47,6 @@ data("und_intnet_chicago")
 plot(und_intnet_chicago) # basic plot
 plot(und_intnet_chicago, enable_grid = TRUE) # with grid
 plot(und_intnet_chicago, xy_axes = FALSE) # without axes
+plot(und_intnet_chicago, path = c("V1","V2","V24","V25","V26","V48")) # highlight a path
 
 }

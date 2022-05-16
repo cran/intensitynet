@@ -1,13 +1,13 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# IntensityNet
+# intensitynet
 
 <!-- badges: start -->
 
 <!-- badges: end -->
 
-The IntensityNet package provides tools to analyze point patterns in
+The intensitynet package provides tools to analyze point patterns in
 space over planar network structures derived from graph-related
 intensity measures for undirected, directed, and mixed networks. This
 package is based on the research done by Eckardt, M., Mateu, J.
@@ -33,12 +33,12 @@ And the development version from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("LlagosteraPol/IntensityNet")
+devtools::install_github("LlagosteraPol/intensitynet")
 ```
 
 ## Example
 
-This is an example that shows you how to set up IntensityNet and
+This is an example that shows you how to set up intensitynet and
 calculate and plot the Geary-c correlation:
 
 ``` r
@@ -57,6 +57,8 @@ library(spatstat)
 #> spatstat 2.3-0       (nickname: 'That's not important right now') 
 #> For an introduction to spatstat, type 'beginner'
 data(chicago)
+
+
 chicago_df <- as.data.frame(chicago[["data"]]) # Get as dataframe the data from Chicago
 
 # Get the adjacency matrix. One way is to create an igraph object from the edge coordinates.
@@ -67,18 +69,13 @@ chicago_net <- igraph::graph_from_edgelist(edges)
 chicago_adj_mtx <- as.matrix(igraph::as_adjacency_matrix(chicago_net))
 chicago_node_coords <- data.frame(xcoord = chicago[["domain"]][["vertices"]][["x"]], 
                                   ycoord = chicago[["domain"]][["vertices"]][["y"]])
-
-# Create a dataframe with the coordinates of the events 'assault'
-chicago_assault <- chicago_df[chicago_df$marks == 'assault',]
-assault_coordinates <- data.frame(xcoord = chicago_assault[,1],
-                                  ycoord = chicago_assault[,2])
                                    
 # Create the intensitynet object, in this case will be undirected 
 intnet_chicago <- intensitynet(chicago_adj_mtx, 
                                node_coords = chicago_node_coords, 
-                               event_coords = assault_coordinates)
+                               event_data = chicago_df)
 
-intnet_chicago <- CalculateEventIntensities(intnet_chicago)
+intnet_chicago <- RelateEventsToNetwork(intnet_chicago)
 #> Calculating edge intensities...
 #> ================================================================================
 #> Calculating node intensities...

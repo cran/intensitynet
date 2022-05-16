@@ -12,18 +12,15 @@ test_that("Calculate edge and nodemeans intensities from a mixed network", {
   chicago_adj_mtx <- as.matrix(igraph::as_adjacency_matrix(chicago_net))
   chicago_node_coords <- data.frame(xcoord = chicago[["domain"]][["vertices"]][["x"]], 
                                     ycoord = chicago[["domain"]][["vertices"]][["y"]])
-  chicago_assault <- chicago_df[chicago_df$marks == 'assault',]
-  assault_coordinates <- data.frame(xcoord = chicago_assault[,1],
-                                    ycoord = chicago_assault[,2])
   
   # Generate undirected intensitynet object
   intnet_chicago <- intensitynet(chicago_adj_mtx, 
                                  node_coords = chicago_node_coords, 
-                                 event_coords = assault_coordinates,
+                                 event_data = chicago_df,
                                  graph_type='mixed')
   
   
-  intnet_chicago <- CalculateEventIntensities(intnet_chicago)
+  intnet_chicago <- RelateEventsToNetwork(intnet_chicago)
   
   
   expect_s3_class(intnet_chicago, c("intensitynet", "intensitynetMix"), exact = TRUE)
@@ -81,8 +78,8 @@ test_that('Node local getis g', {
 test_that('Path Intensity', {
   intnet <- mix_intnet_chicago
   
-  short_dist <- ShortestPathIntensity(intnet, node_id1 = 'V1', node_id2 = 'V150')
-  int_path <- short_dist$intensity
+  short_dist <- ShortestPath(intnet, node_id1 = 'V1', node_id2 = 'V300', weight = 'intensity')
+  int_path <- short_dist$total_weight
   
   expect_gte(int_path, 0)
 })
