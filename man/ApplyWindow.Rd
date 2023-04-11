@@ -2,9 +2,12 @@
 % Please edit documentation in R/intensitynet.R
 \name{ApplyWindow}
 \alias{ApplyWindow}
-\title{Get the intensitynet object delimited by the given window}
+\alias{ApplyWindow.intensitynet}
+\title{Retrieve an intensitynet object focused on a given area}
 \usage{
 ApplyWindow(obj, x_coords, y_coords)
+
+\method{ApplyWindow}{intensitynet}(obj, x_coords, y_coords)
 }
 \arguments{
 \item{obj}{intensitynet object}

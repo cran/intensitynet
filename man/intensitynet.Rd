@@ -2,14 +2,13 @@
 % Please edit documentation in R/intensitynet.R
 \name{intensitynet}
 \alias{intensitynet}
-\title{Constructor of the class intensitynet. In order to create an intensitynet object, it is needed; an adjacency matrix, the
-coordinates of the nodes and the coordinates of the events.}
+\title{Constructor of the class intensitynet.}
 \usage{
 intensitynet(
   adjacency_mtx,
   node_coords,
   event_data,
-  graph_type = "undirected",
+  graph_type = c("undirected", "directed", "mixed"),
   event_correction = 5
 )
 }
@@ -27,10 +26,10 @@ This value highly depends on the given coordinate system}
 }
 \value{
 intensitynet class object containing: graph = <igraph>, events = <matrix>, graph_type = c('directed', 'undirected', 'mixed'), 
-distances = <matrix>
+distances = <matrix>, event_correction = <integer>, events_related = <boolean>
 }
 \description{
-Constructor of the class intensitynet. In order to create an intensitynet object, it is needed; an adjacency matrix, the
+This constructor creates an intensitynet object using an adjacency matrix, the
 coordinates of the nodes and the coordinates of the events.
 }
 \examples{

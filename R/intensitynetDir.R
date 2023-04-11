@@ -1,3 +1,6 @@
+#' Calculates the mean intensity of the given node (for directed networks)
+#' 
+#' @description 
 #' Given a node, calculates its mean intensities regarding in and out edges associated with the node.
 #' 
 #' @name nodeIntensity.intensitynetDir
@@ -65,6 +68,9 @@ MeanNodeIntensity.intensitynetDir= function(obj, node_id){
 }
 
 
+#' Calculates intensity statistics for the given intensitynet object
+#' 
+#' @description 
 #' Calculates edgewise and mean nodewise intensities for Directed networks and, for each edge, the proportions of
 #' all event covariates.
 #' 
@@ -83,8 +89,7 @@ RelateEventsToNetwork.intensitynetDir = function(obj){
   out_counts <- c()
   
   if(length(obj$events) == 0){
-    warning("No events, cannot calculate any intensity.")
-    return(obj)
+    stop("Error: No events, cannot calculate any intensity.")
   }
   
   tmp_obj <- EdgeIntensitiesAndProportions.intensitynet(obj)
@@ -130,72 +135,15 @@ RelateEventsToNetwork.intensitynetDir = function(obj){
   
   # g <- g %>% igraph::set_vertex_attr(name = "intensity_in", value = as.matrix(in_counts)) %>% 
   #            igraph::set_vertex_attr(name = "intensity_out", value = as.matrix(out_counts))
-  g <- igraph::set_vertex_attr(g, name = "intensity_in", value = as.matrix(in_counts))
-  g <- igraph::set_vertex_attr(g, name = "intensity_out", value = as.matrix(out_counts))
+  g <- igraph::set_vertex_attr(g, name = "intensity_in", value = as.numeric(in_counts))
+  g <- igraph::set_vertex_attr(g, name = "intensity_out", value = as.numeric(out_counts))
   
   intnet <- list(graph = g, 
                  events = obj$events, 
                  graph_type = obj$graph_type, 
                  distances_mtx = obj$distances_mtx,
-                 event_correction = obj$event_correction)
-  attr(intnet, 'class') <- c("intensitynet", "intensitynetDir")
+                 event_correction = obj$event_correction,
+                 events_related = TRUE)
+  attr(intnet, 'class') <- c("intensitynetDir", "intensitynet")
   return(intnet)
-}
-
-
-#' Plot intensitynet object
-#'
-#' @name plot.intensitynetDir
-#'
-#' @param x intensitynet object
-#' @param vertex_labels list -> labels for the vertices
-#' @param edge_labels list -> labels for the edges
-#' @param xy_axes show the x and y axes
-#' @param enable_grid draw a background grid
-#' @param path vector with the nodes of the path to be highlighted. Default NULL
-#' @param show_events option to show the events as orange squares, FALSE by default
-#' @param alpha optional argument to set the transparency of the events (show_events = TRUE). The range is from 0.1 (transparent) to 1 (opaque). Default: alpha = 1
-#' @param ... extra arguments for the plot
-#' 
-#' @return No return value, same as graphics::plot.
-#' 
-#' @examples
-#' 
-#' data("dir_intnet_chicago")
-#' plot(dir_intnet_chicago) # basic plot
-#' plot(dir_intnet_chicago, enable_grid = TRUE) # with grid
-#' plot(dir_intnet_chicago, xy_axes = FALSE) # without axes
-#' plot(dir_intnet_chicago, path = c("V1","V2","V24","V25","V26","V48")) # highlight a path
-#' 
-#' @export
-plot.intensitynetDir <- function(x, vertex_labels='none', edge_labels='none', 
-                                 xy_axes=TRUE, enable_grid=FALSE, show_events = FALSE, alpha = 1, path = NULL, ...){
-  g <- x$graph
-  
-  if(!is.null(path) && length(path) == 1){
-    stop("A path must contain more than one vertex")
-  }
-  
-  v_label <- switch(vertex_labels, 
-                    none = {''}, 
-                    intensity_in = {round(igraph::vertex_attr(g)$intensity_in, 4)},
-                    intensity_out = {round(igraph::vertex_attr(g)$intensity_out, 4)},
-                    '')
-  
-  e_label <- switch(edge_labels, 
-                    none = {''}, 
-                    intensity = {round(igraph::edge_attr(g)$intensity, 4)},
-                    '')
-  
-  geoplot_obj <- list(intnet = x, 
-                      vertex_labels = v_label, 
-                      edge_labels = e_label, 
-                      xy_axes = xy_axes, 
-                      enable_grid = enable_grid, 
-                      show_events = show_events,
-                      path = path,
-                      alpha = alpha)
-  class(geoplot_obj) <- "netTools"
-  
-  GeoreferencedPlot(geoplot_obj, ...)
 }

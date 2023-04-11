@@ -1,3 +1,6 @@
+#' Calculates the mean intensity of the given node (for undirected networks)
+#' 
+#' @description 
 #' Calculates the mean intensity of the given node (intensity of all the edges of the node/number of edges of the node)
 #' 
 #' @name nodeIntensity.intensitynetUnd
@@ -39,7 +42,10 @@ MeanNodeIntensity.intensitynetUnd = function(obj, node_id){
 }
 
 
-#' Calculates edgewise and mean nodewise intensities for for Undirected networks and, for each edge, the proportions of
+#' Calculates intensity statistics for the given intensitynet object
+#' 
+#' @description 
+#' Calculates edgewise and mean nodewise intensities for Undirected networks and, for each edge, the proportions of
 #' all event covariates.
 #' 
 #' @name RelateEventsToNetwork.intensitynetUnd
@@ -55,8 +61,7 @@ RelateEventsToNetwork.intensitynetUnd = function(obj){
   counts <- c()
   
   if(length(obj$events) == 0){
-    warning("No events, cannot calculate any intensity.")
-    return(obj)
+    stop("Error: No events, cannot calculate any intensity.")
   }
   
   tmp_obj <- EdgeIntensitiesAndProportions.intensitynet(obj)
@@ -95,70 +100,14 @@ RelateEventsToNetwork.intensitynetUnd = function(obj){
   
   
   #g <- g %>% igraph::set_vertex_attr(name = "intensity", value = as.matrix(counts))
-  g <- igraph::set_vertex_attr(g, name = "intensity", value = as.matrix(counts))
+  g <- igraph::set_vertex_attr(g, name = "intensity", value = as.numeric(counts))
   
   intnet <- list(graph = g, 
                  events = obj$events, 
                  graph_type = obj$graph_type, 
                  distances_mtx = obj$distances_mtx,
-                 event_correction = obj$event_correction)
-  attr(intnet, 'class') <- c("intensitynet", "intensitynetUnd")
+                 event_correction = obj$event_correction,
+                 events_related = TRUE)
+  attr(intnet, 'class') <- c("intensitynetUnd", "intensitynet")
   return(intnet)
-}
-
-
-#' Plot intensitynet object
-#'
-#' @name plot.intensitynetUnd
-#'
-#' @param x intensitynet object
-#' @param vertex_labels list -> labels for the vertices
-#' @param edge_labels list -> labels for the edges
-#' @param xy_axes show the x and y axes
-#' @param enable_grid draw a background grid
-#' @param path vector with the nodes of the path to be highlighted. Default NULL
-#' @param show_events option to show the events as orange squares, FALSE by default
-#' @param alpha optional argument to set the transparency of the events (show_events = TRUE). The range is from 0.1 (transparent) to 1 (opaque). Default: alpha = 1
-#' @param ... extra arguments for the plot
-#' 
-#' @return No return value, same as graphics::plot.
-#' 
-#' @examples
-#' 
-#' data("und_intnet_chicago")
-#' plot(und_intnet_chicago) # basic plot
-#' plot(und_intnet_chicago, enable_grid = TRUE) # with grid
-#' plot(und_intnet_chicago, xy_axes = FALSE) # without axes
-#' plot(und_intnet_chicago, path = c("V1","V2","V24","V25","V26","V48")) # highlight a path
-#' 
-#' @export
-plot.intensitynetUnd <- function(x, vertex_labels = 'none', edge_labels = 'none', 
-                                 xy_axes = TRUE, enable_grid = FALSE, show_events = FALSE, alpha = 1, path = NULL, ...){
-  g <- x$graph
-  
-  if(!is.null(path) && length(path) == 1){
-    stop("A path must contain more than one vertex")
-  }
-  
-  v_label <- switch(vertex_labels, 
-                    none = {''}, 
-                    intensity = {round(igraph::vertex_attr(g)$intensity, 4)},
-                    '')
-  
-  e_label <- switch(edge_labels, 
-                    none = {''}, 
-                    intensity = {round(igraph::edge_attr(g)$intensity, 4)},
-                    '')
-  
-  geoplot_obj <- list(intnet = x, 
-                      vertex_labels = v_label, 
-                      edge_labels = e_label, 
-                      xy_axes = xy_axes, 
-                      enable_grid = enable_grid, 
-                      show_events = show_events,
-                      path = path,
-                      alpha = alpha)
-  class(geoplot_obj) <- "netTools"
-  
-  GeoreferencedPlot(geoplot_obj, ...)
 }

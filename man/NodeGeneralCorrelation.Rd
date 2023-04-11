@@ -2,13 +2,20 @@
 % Please edit documentation in R/intensitynet.R
 \name{NodeGeneralCorrelation}
 \alias{NodeGeneralCorrelation}
-\title{It allows to compute different dependence statistics on the network
-for the given vector and for neighborhoods of distinct order. Such statistics are; correlation,
-covariance, Moran’s I and Geary’s C.}
+\alias{NodeGeneralCorrelation.intensitynet}
+\title{Calculate dependence statistics on the network}
 \usage{
 NodeGeneralCorrelation(
   obj,
   dep_type,
+  lag_max,
+  intensity,
+  partial_neighborhood = TRUE
+)
+
+\method{NodeGeneralCorrelation}{intensitynet}(
+  obj,
+  dep_type = c("correlation", "covariance", "moran", "geary"),
   lag_max,
   intensity,
   partial_neighborhood = TRUE
